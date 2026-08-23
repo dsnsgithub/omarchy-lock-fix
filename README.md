@@ -17,6 +17,11 @@ A combination of these 2 PRs (with some polish):
 - https://github.com/basecamp/omarchy/pull/7673
 - https://github.com/basecamp/omarchy/pull/7643
 
+This Plugin solves:
+- https://github.com/basecamp/omarchy/issues/7749
+- https://github.com/basecamp/omarchy/issues/7399
+- https://github.com/basecamp/omarchy/issues/7507
+
 ## Compare changes:
 No changes to LockView.qml, manifest.json is for metadata.
 
