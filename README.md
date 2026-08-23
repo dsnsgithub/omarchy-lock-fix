@@ -5,8 +5,6 @@ With this plugin, sleep and lock work perfectly.
 
 The default in Omarchy is to blank the screen and keyboard RGB on the lock screen after only 5 seconds. This creates issues as some PC peripherals such as monitors take longer than 5 seconds to wake from sleep.
 
-I believe this causes some sort of race condition as it attempts to wake and sleep at the same time.
-
 Installation:
 ```bash
 omarchy plugin add https://github.com/dsnsgithub/omarchy-lock-fix
