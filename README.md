@@ -14,8 +14,8 @@ I believe this causes some sort of race condition as it attempts to wake and sle
 Longer term solution: Make screen blank wait time configurable, increase it to >30 seconds. Create a configuration to disable this "screen blanking" entirely.
 
 A combination of these 2 PRs (with some polish):
-https://github.com/basecamp/omarchy/pull/7673
-https://github.com/basecamp/omarchy/pull/7643
+- https://github.com/basecamp/omarchy/pull/7673
+- https://github.com/basecamp/omarchy/pull/7643
 
 ## Compare changes:
 No changes to LockView.qml, manifest.json is for metadata.
