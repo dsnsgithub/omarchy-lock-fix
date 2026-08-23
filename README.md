@@ -17,16 +17,19 @@ or else it will not take effect.
 - Fixes issue where screen will turn off when I wake my computer from sleep, requiring many clicks on each monitor to wake them up. => Solution: Remove screen blanking after 5 seconds
 - Fixes issue where I am unable to type the password to unlock => Solution: Remove keyboard rgb blanking after 5 seconds
 
-Longer term solution: Make screen blank wait time configurable, increase it to >30 seconds. Create a configuration to disable this "screen blanking" entirely.
+This plugin solves:
+- https://github.com/basecamp/omarchy/issues/7749
+- https://github.com/basecamp/omarchy/issues/7399
+- https://github.com/basecamp/omarchy/issues/7507
+
+## Longer term solution
+My plugin works, but it serves as a temporary fix while they work out a better solution. Here are a couple suggestions:
+
+Make screen blank wait time configurable, increase it to >30 seconds. Create a configuration to disable this "screen blanking" entirely.
 
 A combination of these 2 PRs (with some polish):
 - https://github.com/basecamp/omarchy/pull/7673
 - https://github.com/basecamp/omarchy/pull/7643
-
-This Plugin solves:
-- https://github.com/basecamp/omarchy/issues/7749
-- https://github.com/basecamp/omarchy/issues/7399
-- https://github.com/basecamp/omarchy/issues/7507
 
 ## Compare changes:
 No changes to LockView.qml, manifest.json is for metadata.
