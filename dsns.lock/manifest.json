@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "dsns.lock",
+  "name": "My Lock Screen",
+  "version": "1.0.0",
+  "author": "Omarchy",
+  "description": "Quickshell session lock - Fixes Screen Blank.",
+  "kinds": [
+    "service"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml"
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.lock"
+  }
+}

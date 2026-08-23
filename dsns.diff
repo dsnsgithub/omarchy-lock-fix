@@ -1,0 +1,65 @@
+diff --git 1/usr/share/omarchy/shell/plugins/lock/Service.qml 2/Service.qml
+index 9ecb1cc..d4f86eb 100644
+--- 1/usr/share/omarchy/shell/plugins/lock/Service.qml
++++ 2/Service.qml
+@@ -133,7 +133,8 @@ Item {
+ 
+     resetAuthenticationState()
+     lockRequested = true
+-    armBlankTimer()
++    // created by DSNS
++    // armBlankTimer()
+     logEvent("lock-requested")
+     queueSessionLock()
+ 
+@@ -160,8 +161,9 @@ Item {
+   }
+ 
+   function armBlankTimer() {
+-    idleBlankTimer.armedAt = Date.now()
+-    idleBlankTimer.restart()
++    // created by DSNS
++    // idleBlankTimer.armedAt = Date.now()
++    // idleBlankTimer.restart()
+   }
+ 
+   function runWake() {
+@@ -408,7 +410,7 @@ Item {
+ 
+   Process {
+     id: blankProcess
+-    command: ["bash", "-c", "omarchy-brightness-keyboard off; omarchy-brightness-display off"]
++    command: ["bash", "-c", "echo Attempted to Blank Screen - made by DSNS!!!"]
+   }
+ 
+   Timer {
+@@ -421,7 +423,7 @@ Item {
+       // blank the freshly woken unlock screen under the user. Wall-clock time
+       // exposes the gap: take a fresh run-up instead of blanking.
+       if (Date.now() - armedAt > interval + 2000) {
+-        root.armBlankTimer()
++        // comment by DSNS: root.armBlankTimer()
+         return
+       }
+       // Only a password check in flight should hold the display up. The
+@@ -476,9 +478,11 @@ Item {
+   }
+ 
+   onAuthenticatingPasswordChanged: {
++    // created by dsns:
++    return
+     if (!lockRequested) return
+     if (authenticatingPassword) idleBlankTimer.stop()
+-    else armBlankTimer()
++    // else armBlankTimer()
+   }
+ 
+   FileView {
+@@ -502,6 +506,7 @@ Item {
+   }
+ 
+   Component.onCompleted: {
++    logEvent("dsns-clone-live", "marker-v1")
+     refreshBackground()
+     refreshFingerprintStatus()
+     checkStrandedLock()
