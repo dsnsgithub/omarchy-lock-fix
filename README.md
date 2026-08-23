@@ -7,6 +7,12 @@ The default in Omarchy is to blank the screen and keyboard RGB on the lock scree
 
 I believe this causes some sort of race condition as it attempts to wake and sleep at the same time.
 
+When using this plugin/creating your own, make sure to run
+```bash
+omarchy restart shell
+```
+or else it will not take effect.
+
 ## Fixed issues:
 - Fixes issue where screen will turn off when I wake my computer from sleep, requiring many clicks on each monitor to wake them up. => Solution: Remove screen blanking after 5 seconds
 - Fixes issue where I am unable to type the password to unlock => Solution: Remove keyboard rgb blanking after 5 seconds
