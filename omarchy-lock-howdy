@@ -1,15 +1,3 @@
 #%PAM-1.0
-# created by DSNS
-# Face-only auth stack, used for the passive Howdy scan the lock screen starts
-# on its own. Kept separate from omarchy-lock-password so a failed scan never
-# falls through to pam_unix (which would prompt) or trip pam_faillock.
-#
-# No workaround= option on purpose: the module then only compares and returns,
-# with no terminal handling and no synthetic Enter aimed at the focused window.
-#
-# pam_start_confdir resolves `include` inside this directory, so the account
-# stage cannot pull in system-local-login the way /etc/pam.d/omarchy-lock-howdy
-# would. Nothing here grants a session -- the real account check still runs on
-# the password path in /etc/pam.d/omarchy-lock-password.
 auth       required                    pam_howdy.so
 account    required                    pam_permit.so
