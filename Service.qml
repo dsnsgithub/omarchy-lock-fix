@@ -22,6 +22,12 @@ Item {
   property bool fingerprintAuthenticating: false
   property bool passwordPamConfigured: false
   property bool fingerprintConfigured: false
+  property bool howdyEnabled: true
+  property bool howdyConfigured: false
+  property bool howdyAuthenticating: false
+  property bool howdySystemPam: false
+  property int howdyAttempts: 0
+  property double howdyBurstEndedAt: 0
   property bool previewVisible: false
   property string enteredPassword: ""
   property string pendingPassword: ""
@@ -36,6 +42,15 @@ Item {
 
   readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
   readonly property bool authenticating: authenticatingPassword || fingerprintAuthenticating
+
+  readonly property int howdyMaxAttempts: 5
+  readonly property int howdyRearmDelay: 5000
+
+  readonly property string pluginDirectory: {
+    var path = String(Qt.resolvedUrl("."))
+    if (path.indexOf("file://") === 0) path = path.substring(7)
+    return decodeURIComponent(path).replace(/\/+$/, "")
+  }
 
   function realScreenCount() {
     var screens = Quickshell.screens || []
@@ -107,6 +122,10 @@ Item {
     if (!fingerprintCheckProc.running) fingerprintCheckProc.running = true
   }
 
+  function refreshHowdyStatus() {
+    if (!howdyCheckProc.running) howdyCheckProc.running = true
+  }
+
   function logEvent(event) {
     lastEvent = event
     lastEventAt = new Date().toISOString()
@@ -123,6 +142,9 @@ Item {
     fingerprintRetryTimer.stop()
     if (passwordPam.active) passwordPam.abort()
     if (fingerprintPam.active) fingerprintPam.abort()
+    stopHowdy()
+    howdyAttempts = 0
+    howdyBurstEndedAt = 0
   }
 
   function beginLock() {
@@ -133,14 +155,13 @@ Item {
 
     resetAuthenticationState()
     lockRequested = true
-    // created by DSNS
-    // armBlankTimer()
     logEvent("lock-requested")
     queueSessionLock()
 
     Qt.callLater(function() {
       root.refreshBackground()
       root.refreshFingerprintStatus()
+      root.refreshHowdyStatus()
     })
 
     return true
@@ -161,14 +182,12 @@ Item {
   }
 
   function armBlankTimer() {
-    // created by DSNS
-    // idleBlankTimer.armedAt = Date.now()
-    // idleBlankTimer.restart()
   }
 
   function runWake() {
     if (!wakeProcess.running) wakeProcess.running = true
     if (lockRequested) armBlankTimer()
+    if (lockRequested) rearmHowdy()
   }
 
   function runBlank() {
@@ -180,6 +199,7 @@ Item {
     if (!lockRequested || authenticatingPassword || password.length === 0) return
 
     runWake()
+    stopHowdy()
     pendingPassword = password
     failureMessage = ""
     authenticatingPassword = true
@@ -205,7 +225,10 @@ Item {
     pendingPassword = ""
     failedAttempts += 1
     failureMessage = "Authentication failed (" + failedAttempts + ")"
+    howdyAttempts = 0
+    howdyBurstEndedAt = 0
     runWake()
+    startHowdy()
   }
 
   function startFingerprint() {
@@ -216,6 +239,64 @@ Item {
     if (!fingerprintPam.start()) {
       fingerprintAuthenticating = false
     }
+  }
+
+  function startHowdy() {
+    if (!howdyEnabled || !howdyConfigured) return
+    if (!lockRequested || !sessionLock.secure) return
+    if (howdyPam.active || howdyAuthenticating) return
+    if (authenticatingPassword) return
+    if (howdyAttempts >= howdyMaxAttempts) return
+
+    howdyAttempts += 1
+    howdyAuthenticating = true
+    logEvent("howdy-scan: attempt " + howdyAttempts + "/" + howdyMaxAttempts)
+
+    if (!howdyPam.start()) {
+      howdyAuthenticating = false
+      endHowdyBurst("start-failed")
+    }
+  }
+
+  function stopHowdy() {
+    howdyRetryTimer.stop()
+    howdyAuthenticating = false
+    if (howdyPam.active) howdyPam.abort()
+  }
+
+  function endHowdyBurst(reason) {
+    howdyRetryTimer.stop()
+    howdyAttempts = howdyMaxAttempts
+    howdyBurstEndedAt = Date.now()
+    logEvent("howdy-idle: " + reason)
+  }
+
+  function rearmHowdy() {
+    if (!howdyEnabled || !howdyConfigured || !lockRequested) return
+    if (howdyPam.active || howdyAuthenticating) return
+    if (howdyAttempts < howdyMaxAttempts) return
+    if (Date.now() - howdyBurstEndedAt < howdyRearmDelay) return
+
+    howdyAttempts = 0
+    startHowdy()
+  }
+
+  function handleHowdyFinished(result) {
+    howdyAuthenticating = false
+
+    if (!lockRequested) return
+    if (result === PamResult.Success) {
+      logEvent("howdy-success")
+      finishUnlock()
+      return
+    }
+
+    if (howdyAttempts >= howdyMaxAttempts) {
+      endHowdyBurst("no match")
+      return
+    }
+
+    howdyRetryTimer.restart()
   }
 
   function handleFingerprintFinished(result) {
@@ -241,6 +322,7 @@ Item {
         sessionLockStabilizeTimer.stop()
         pendingSessionLockTimer.stop()
         root.startFingerprint()
+        root.startHowdy()
       }
     }
 
@@ -273,6 +355,7 @@ Item {
         backgroundPath: root.backgroundPath
         backgroundVersion: root.backgroundVersion
         fingerprintConfigured: root.fingerprintConfigured
+        howdyScanning: root.howdyAuthenticating
         authenticatingPassword: root.authenticatingPassword
         failureMessage: root.failureMessage
         failedAttempts: root.failedAttempts
@@ -303,6 +386,7 @@ Item {
       backgroundPath: root.backgroundPath
       backgroundVersion: root.backgroundVersion
       fingerprintConfigured: root.fingerprintConfigured
+      howdyScanning: false
       authenticatingPassword: false
       failureMessage: ""
       failedAttempts: 0
@@ -362,6 +446,36 @@ Item {
     onTriggered: root.startFingerprint()
   }
 
+  PamContext {
+    id: howdyPam
+    config: "omarchy-lock-howdy"
+    configDirectory: root.howdySystemPam ? "/etc/pam.d" : root.pluginDirectory
+    user: root.userName
+
+    onResponseRequiredChanged: {
+      if (!responseRequired) return
+      root.logEvent("howdy-abort: unexpected prompt")
+      root.stopHowdy()
+      root.endHowdyBurst("unexpected prompt")
+    }
+
+    onCompleted: function(result) {
+      root.handleHowdyFinished(result)
+    }
+
+    onError: function(error) {
+      root.howdyAuthenticating = false
+      root.endHowdyBurst("pam error " + error)
+    }
+  }
+
+  Timer {
+    id: howdyRetryTimer
+    interval: 400
+    repeat: false
+    onTriggered: root.startHowdy()
+  }
+
   Process {
     id: readlinkProc
     command: ["readlink", "-f", root.currentBackgroundLink]
@@ -389,6 +503,24 @@ Item {
   }
 
   Process {
+    id: howdyCheckProc
+    command: ["bash", "-c", "if [[ ! -f /usr/lib/security/pam_howdy.so && ! -f /lib/security/pam_howdy.so ]]; then echo no; elif [[ ! -u /usr/lib/howdy/howdy-auth-helper ]]; then echo no; elif [[ -f /etc/pam.d/omarchy-lock-howdy ]]; then echo system; elif [[ -f \"$1/omarchy-lock-howdy\" ]]; then echo plugin; else echo no; fi", "howdy-check", root.pluginDirectory]
+    stdout: StdioCollector { id: howdyCheckStdout; waitForEnd: true }
+    onExited: {
+      var answer = String(howdyCheckStdout.text || "").trim()
+      root.howdySystemPam = answer === "system"
+      root.howdyConfigured = answer === "system" || answer === "plugin"
+
+      if (!root.howdyConfigured) {
+        if (howdyPam.active) howdyPam.abort()
+        return
+      }
+
+      if (root.lockRequested) root.startHowdy()
+    }
+  }
+
+  Process {
     id: strandedLockCheckProc
     command: ["bash", "-c", "omarchy-hyprland-session-locked"]
     onExited: function(exitCode) {
@@ -410,7 +542,7 @@ Item {
 
   Process {
     id: blankProcess
-    command: ["bash", "-c", "echo Attempted to Blank Screen - made by DSNS!!!"]
+    command: ["true"]
   }
 
   Timer {
@@ -423,7 +555,6 @@ Item {
       // blank the freshly woken unlock screen under the user. Wall-clock time
       // exposes the gap: take a fresh run-up instead of blanking.
       if (Date.now() - armedAt > interval + 2000) {
-        // comment by DSNS: root.armBlankTimer()
         return
       }
       // Only a password check in flight should hold the display up. The
@@ -477,14 +608,6 @@ Item {
     }
   }
 
-  onAuthenticatingPasswordChanged: {
-    // created by dsns:
-    return
-    if (!lockRequested) return
-    if (authenticatingPassword) idleBlankTimer.stop()
-    // else armBlankTimer()
-  }
-
   FileView {
     path: "/etc/pam.d/omarchy-lock-password"
     watchChanges: true
@@ -506,9 +629,9 @@ Item {
   }
 
   Component.onCompleted: {
-    logEvent("dsns-clone-live", "marker-v1")
     refreshBackground()
     refreshFingerprintStatus()
+    refreshHowdyStatus()
     checkStrandedLock()
   }
 
@@ -535,6 +658,10 @@ Item {
         realScreens: root.realScreenCount(),
         passwordPam: root.passwordPamConfigured,
         fingerprint: root.fingerprintConfigured,
+        howdy: root.howdyConfigured,
+        howdyPam: root.howdyConfigured ? (root.howdySystemPam ? "/etc/pam.d" : root.pluginDirectory) : "",
+        howdyScanning: root.howdyAuthenticating,
+        howdyAttempts: root.howdyAttempts,
         authenticating: root.authenticating,
         lastEvent: root.lastEvent,
         lastEventAt: root.lastEventAt

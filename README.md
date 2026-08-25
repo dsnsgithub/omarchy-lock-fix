@@ -11,6 +11,8 @@ omarchy plugin add https://github.com/dsnsgithub/omarchy-lock-fix
 omarchy restart shell
 ```
 
+This also adds support for immediate Howdy facial recognition if Howdy is installed on your computer.
+
 ## Fixed issues:
 - Fixes issue where screen will turn off when I wake my computer from sleep, requiring many clicks on each monitor to wake them up. => Solution: Remove screen blanking after 5 seconds
 - Fixes issue where I am unable to type the password to unlock => Solution: Remove keyboard rgb blanking after 5 seconds
@@ -30,12 +32,7 @@ A combination of these 2 PRs (with some polish):
 - https://github.com/basecamp/omarchy/pull/7643
 
 ## Compare changes:
-No changes to LockView.qml, manifest.json is for metadata.
-
-The changes are intentionally verbose so that any issues caused by this removed blanking can be traced back to the plugin, sorry about that 😅.
-
-Diff:
-`diff /usr/share/omarchy/shell/plugins/lock Service.qml` => [dsns.diff](https://github.com/dsnsgithub/omarchy-lock-fix/blob/main/dsns.diff)
+[dsns.diff](https://github.com/dsnsgithub/omarchy-lock-fix/blob/main/dsns.diff)
 
 ## Creating your own plugin
 
