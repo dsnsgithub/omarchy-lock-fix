@@ -11,7 +11,7 @@ omarchy plugin add https://github.com/dsnsgithub/omarchy-lock-fix
 omarchy restart shell
 ```
 
-This also adds support for immediate Howdy facial recognition if Howdy is installed on your computer.
+This also adds **immediate** Howdy facial recognition if Howdy is installed on your computer.
 
 ## Fixed issues:
 - Fixes issue where screen will turn off when I wake my computer from sleep, requiring many clicks on each monitor to wake them up. => Solution: Remove screen blanking after 5 seconds
