@@ -9,6 +9,8 @@ Item {
   property string backgroundPath: ""
   property int backgroundVersion: 0
   property bool fingerprintConfigured: false
+  // created by DSNS: true while a Howdy face scan is in flight
+  property bool howdyScanning: false
   property bool authenticatingPassword: false
   property string failureMessage: ""
   property int failedAttempts: 0
@@ -17,7 +19,9 @@ Item {
   property string passwordText: ""
   property bool syncingPasswordText: false
 
-  readonly property string placeholderText: "Enter Password"
+  // created by DSNS: the face scan runs on its own now, so say so in the field
+  // rather than leaving "Enter Password" as the only visible way in.
+  readonly property string placeholderText: howdyScanning ? "Scanning Face…" : "Enter Password"
   readonly property int fieldWidth: 381
   readonly property int fieldHeight: 67
   readonly property int outlineThickness: 3

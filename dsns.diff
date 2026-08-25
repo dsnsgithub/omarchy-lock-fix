@@ -1,8 +1,67 @@
 diff --git 1/usr/share/omarchy/shell/plugins/lock/Service.qml 2/Service.qml
-index 9ecb1cc..d4f86eb 100644
+index 9ecb1cc..a4d8fb8 100644
 --- 1/usr/share/omarchy/shell/plugins/lock/Service.qml
 +++ 2/Service.qml
-@@ -133,7 +133,8 @@ Item {
+@@ -22,6 +22,13 @@ Item {
+   property bool fingerprintAuthenticating: false
+   property bool passwordPamConfigured: false
+   property bool fingerprintConfigured: false
++  // created by DSNS: passive Howdy face unlock
++  property bool howdyEnabled: true
++  property bool howdyConfigured: false
++  property bool howdyAuthenticating: false
++  property bool howdySystemPam: false
++  property int howdyAttempts: 0
++  property double howdyBurstEndedAt: 0
+   property bool previewVisible: false
+   property string enteredPassword: ""
+   property string pendingPassword: ""
+@@ -37,6 +44,21 @@ Item {
+   readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
+   readonly property bool authenticating: authenticatingPassword || fingerprintAuthenticating
+ 
++  // created by DSNS: a scan runs the camera, so face auth goes in bursts instead
++  // of looping for as long as the screen stays locked. A burst is `howdyMaxAttempts`
++  // scans; user activity starts a fresh one once `howdyRearmDelay` has passed.
++  readonly property int howdyMaxAttempts: 5
++  readonly property int howdyRearmDelay: 5000
++
++  // Directory holding this plugin's own PAM stack, used when the system has no
++  // /etc/pam.d/omarchy-lock-howdy. Absolute, so it does not depend on how
++  // PamContext resolves a relative configDirectory.
++  readonly property string pluginDirectory: {
++    var path = String(Qt.resolvedUrl("."))
++    if (path.indexOf("file://") === 0) path = path.substring(7)
++    return decodeURIComponent(path).replace(/\/+$/, "")
++  }
++
+   function realScreenCount() {
+     var screens = Quickshell.screens || []
+     var count = 0
+@@ -107,6 +129,11 @@ Item {
+     if (!fingerprintCheckProc.running) fingerprintCheckProc.running = true
+   }
+ 
++  // created by DSNS
++  function refreshHowdyStatus() {
++    if (!howdyCheckProc.running) howdyCheckProc.running = true
++  }
++
+   function logEvent(event) {
+     lastEvent = event
+     lastEventAt = new Date().toISOString()
+@@ -123,6 +150,10 @@ Item {
+     fingerprintRetryTimer.stop()
+     if (passwordPam.active) passwordPam.abort()
+     if (fingerprintPam.active) fingerprintPam.abort()
++    // created by DSNS
++    stopHowdy()
++    howdyAttempts = 0
++    howdyBurstEndedAt = 0
+   }
+ 
+   function beginLock() {
+@@ -133,13 +164,16 @@ Item {
  
      resetAuthenticationState()
      lockRequested = true
@@ -12,7 +71,15 @@ index 9ecb1cc..d4f86eb 100644
      logEvent("lock-requested")
      queueSessionLock()
  
-@@ -160,8 +161,9 @@ Item {
+     Qt.callLater(function() {
+       root.refreshBackground()
+       root.refreshFingerprintStatus()
++      // created by DSNS
++      root.refreshHowdyStatus()
+     })
+ 
+     return true
+@@ -160,13 +194,17 @@ Item {
    }
  
    function armBlankTimer() {
@@ -24,7 +91,207 @@ index 9ecb1cc..d4f86eb 100644
    }
  
    function runWake() {
-@@ -408,7 +410,7 @@ Item {
+     if (!wakeProcess.running) wakeProcess.running = true
+     if (lockRequested) armBlankTimer()
++    // created by DSNS: activity at the lock screen means a face may be in front
++    // of the camera again.
++    if (lockRequested) rearmHowdy()
+   }
+ 
+   function runBlank() {
+@@ -178,6 +216,9 @@ Item {
+     if (!lockRequested || authenticatingPassword || password.length === 0) return
+ 
+     runWake()
++    // created by DSNS: omarchy-lock-password starts with pam_howdy, so hand the
++    // camera over before that stack runs.
++    stopHowdy()
+     pendingPassword = password
+     failureMessage = ""
+     authenticatingPassword = true
+@@ -203,7 +244,12 @@ Item {
+     pendingPassword = ""
+     failedAttempts += 1
+     failureMessage = "Authentication failed (" + failedAttempts + ")"
++    // created by DSNS: the camera is free again, so let the face path have
++    // another go alongside the next password attempt.
++    howdyAttempts = 0
++    howdyBurstEndedAt = 0
+     runWake()
++    startHowdy()
+   }
+ 
+   function startFingerprint() {
+@@ -216,6 +262,70 @@ Item {
+     }
+   }
+ 
++  // created by DSNS: everything below runs the face scan on its own, so Howdy no
++  // longer waits on a keystroke in the password box to be reached through the
++  // pam_howdy line in /etc/pam.d/omarchy-lock-password.
++  function startHowdy() {
++    if (!howdyEnabled || !howdyConfigured) return
++    if (!lockRequested || !sessionLock.secure) return
++    if (howdyPam.active || howdyAuthenticating) return
++    // The password stack runs pam_howdy too; two scans would fight over the camera.
++    if (authenticatingPassword) return
++    if (howdyAttempts >= howdyMaxAttempts) return
++
++    howdyAttempts += 1
++    howdyAuthenticating = true
++    logEvent("howdy-scan: attempt " + howdyAttempts + "/" + howdyMaxAttempts)
++
++    if (!howdyPam.start()) {
++      howdyAuthenticating = false
++      endHowdyBurst("start-failed")
++    }
++  }
++
++  function stopHowdy() {
++    howdyRetryTimer.stop()
++    howdyAuthenticating = false
++    if (howdyPam.active) howdyPam.abort()
++  }
++
++  function endHowdyBurst(reason) {
++    howdyRetryTimer.stop()
++    howdyAttempts = howdyMaxAttempts
++    howdyBurstEndedAt = Date.now()
++    logEvent("howdy-idle: " + reason)
++  }
++
++  // Camera off until someone is actually there: a new burst needs user activity
++  // (mouse, key, wake) and a gap since the last one gave up.
++  function rearmHowdy() {
++    if (!howdyEnabled || !howdyConfigured || !lockRequested) return
++    if (howdyPam.active || howdyAuthenticating) return
++    if (howdyAttempts < howdyMaxAttempts) return
++    if (Date.now() - howdyBurstEndedAt < howdyRearmDelay) return
++
++    howdyAttempts = 0
++    startHowdy()
++  }
++
++  function handleHowdyFinished(result) {
++    howdyAuthenticating = false
++
++    if (!lockRequested) return
++    if (result === PamResult.Success) {
++      logEvent("howdy-success")
++      finishUnlock()
++      return
++    }
++
++    if (howdyAttempts >= howdyMaxAttempts) {
++      endHowdyBurst("no match")
++      return
++    }
++
++    howdyRetryTimer.restart()
++  }
++
+   function handleFingerprintFinished(result) {
+     fingerprintAuthenticating = false
+ 
+@@ -239,6 +349,9 @@ Item {
+         sessionLockStabilizeTimer.stop()
+         pendingSessionLockTimer.stop()
+         root.startFingerprint()
++        // created by DSNS: scan as soon as the lock surface is up, with no
++        // keystroke needed first.
++        root.startHowdy()
+       }
+     }
+ 
+@@ -271,6 +384,7 @@ Item {
+         backgroundPath: root.backgroundPath
+         backgroundVersion: root.backgroundVersion
+         fingerprintConfigured: root.fingerprintConfigured
++        howdyScanning: root.howdyAuthenticating
+         authenticatingPassword: root.authenticatingPassword
+         failureMessage: root.failureMessage
+         failedAttempts: root.failedAttempts
+@@ -301,6 +415,7 @@ Item {
+       backgroundPath: root.backgroundPath
+       backgroundVersion: root.backgroundVersion
+       fingerprintConfigured: root.fingerprintConfigured
++      howdyScanning: false
+       authenticatingPassword: false
+       failureMessage: ""
+       failedAttempts: 0
+@@ -360,6 +475,44 @@ Item {
+     onTriggered: root.startFingerprint()
+   }
+ 
++  // created by DSNS
++  PamContext {
++    id: howdyPam
++    config: "omarchy-lock-howdy"
++    // Prefer a root-owned stack when one exists; otherwise use the copy shipped
++    // with this plugin so face unlock works without touching /etc/pam.d.
++    configDirectory: root.howdySystemPam ? "/etc/pam.d" : root.pluginDirectory
++    user: root.userName
++
++    // The stack is pam_howdy alone with no workaround=, so it compares and
++    // returns without ever asking for input. A prompt here means the stack is
++    // not what this plugin expects -- drop it rather than hang holding the camera.
++    onResponseRequiredChanged: {
++      if (!responseRequired) return
++      root.logEvent("howdy-abort: unexpected prompt")
++      root.stopHowdy()
++      root.endHowdyBurst("unexpected prompt")
++    }
++
++    onCompleted: function(result) {
++      root.handleHowdyFinished(result)
++    }
++
++    onError: function(error) {
++      root.howdyAuthenticating = false
++      root.endHowdyBurst("pam error " + error)
++    }
++  }
++
++  // created by DSNS: a scan lasts up to [video] timeout seconds (4 by default),
++  // so a short gap between attempts is enough to let the camera settle.
++  Timer {
++    id: howdyRetryTimer
++    interval: 400
++    repeat: false
++    onTriggered: root.startHowdy()
++  }
++
+   Process {
+     id: readlinkProc
+     command: ["readlink", "-f", root.currentBackgroundLink]
+@@ -386,6 +539,26 @@ Item {
+     }
+   }
+ 
++  // created by DSNS: /etc/howdy is root-only, so enrollment cannot be checked
++  // from here -- report the module, the setuid helper, and which PAM stack to use.
++  Process {
++    id: howdyCheckProc
++    command: ["bash", "-c", "if [[ ! -f /usr/lib/security/pam_howdy.so && ! -f /lib/security/pam_howdy.so ]]; then echo no; elif [[ ! -u /usr/lib/howdy/howdy-auth-helper ]]; then echo no; elif [[ -f /etc/pam.d/omarchy-lock-howdy ]]; then echo system; elif [[ -f \"$1/omarchy-lock-howdy\" ]]; then echo plugin; else echo no; fi", "howdy-check", root.pluginDirectory]
++    stdout: StdioCollector { id: howdyCheckStdout; waitForEnd: true }
++    onExited: {
++      var answer = String(howdyCheckStdout.text || "").trim()
++      root.howdySystemPam = answer === "system"
++      root.howdyConfigured = answer === "system" || answer === "plugin"
++
++      if (!root.howdyConfigured) {
++        if (howdyPam.active) howdyPam.abort()
++        return
++      }
++
++      if (root.lockRequested) root.startHowdy()
++    }
++  }
++
+   Process {
+     id: strandedLockCheckProc
+     command: ["bash", "-c", "omarchy-hyprland-session-locked"]
+@@ -408,7 +581,7 @@ Item {
  
    Process {
      id: blankProcess
@@ -33,7 +300,7 @@ index 9ecb1cc..d4f86eb 100644
    }
  
    Timer {
-@@ -421,7 +423,7 @@ Item {
+@@ -421,7 +594,7 @@ Item {
        // blank the freshly woken unlock screen under the user. Wall-clock time
        // exposes the gap: take a fresh run-up instead of blanking.
        if (Date.now() - armedAt > interval + 2000) {
@@ -42,7 +309,7 @@ index 9ecb1cc..d4f86eb 100644
          return
        }
        // Only a password check in flight should hold the display up. The
-@@ -476,9 +478,11 @@ Item {
+@@ -476,9 +649,11 @@ Item {
    }
  
    onAuthenticatingPasswordChanged: {
@@ -55,11 +322,50 @@ index 9ecb1cc..d4f86eb 100644
    }
  
    FileView {
-@@ -502,6 +506,7 @@ Item {
+@@ -502,8 +677,11 @@ Item {
    }
  
    Component.onCompleted: {
 +    logEvent("dsns-clone-live", "marker-v1")
      refreshBackground()
      refreshFingerprintStatus()
++    // created by DSNS
++    refreshHowdyStatus()
      checkStrandedLock()
+   }
+ 
+@@ -530,6 +708,10 @@ Item {
+         realScreens: root.realScreenCount(),
+         passwordPam: root.passwordPamConfigured,
+         fingerprint: root.fingerprintConfigured,
++        howdy: root.howdyConfigured,
++        howdyPam: root.howdyConfigured ? (root.howdySystemPam ? "/etc/pam.d" : root.pluginDirectory) : "",
++        howdyScanning: root.howdyAuthenticating,
++        howdyAttempts: root.howdyAttempts,
+         authenticating: root.authenticating,
+         lastEvent: root.lastEvent,
+         lastEventAt: root.lastEventAt
+diff --git 1/usr/share/omarchy/shell/plugins/lock/LockView.qml 2/LockView.qml
+index 7b0b0ae..4cf2e4a 100644
+--- 1/usr/share/omarchy/shell/plugins/lock/LockView.qml
++++ 2/LockView.qml
+@@ -9,6 +9,8 @@ Item {
+   property string backgroundPath: ""
+   property int backgroundVersion: 0
+   property bool fingerprintConfigured: false
++  // created by DSNS: true while a Howdy face scan is in flight
++  property bool howdyScanning: false
+   property bool authenticatingPassword: false
+   property string failureMessage: ""
+   property int failedAttempts: 0
+@@ -17,7 +19,9 @@ Item {
+   property string passwordText: ""
+   property bool syncingPasswordText: false
+ 
+-  readonly property string placeholderText: "Enter Password"
++  // created by DSNS: the face scan runs on its own now, so say so in the field
++  // rather than leaving "Enter Password" as the only visible way in.
++  readonly property string placeholderText: howdyScanning ? "Scanning Face…" : "Enter Password"
+   readonly property int fieldWidth: 381
+   readonly property int fieldHeight: 67
+   readonly property int outlineThickness: 3
