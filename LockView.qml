@@ -38,6 +38,14 @@ Item {
     ? Border.surfaceSpec("lock", "border-error", Color.lock.borderError, root.outlineThickness, "border-alpha")
     : Border.surfaceSpec("lock", "border-active", Color.lock.borderActive, root.outlineThickness, "border-alpha")
 
+  focus: true
+  Keys.onPressed: function(event) {
+    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+      passwordInput.accepted()
+      event.accepted = true
+    }
+  }
+
   signal submitPassword(string password)
   signal passwordTextEdited(string password)
   signal clearFailureRequested()
@@ -171,7 +179,7 @@ Item {
         onAccepted: {
           var submitted = root.passwordText
           root.passwordTextEdited("")
-          if (submitted.length > 0) root.submitPassword(submitted)
+          root.submitPassword(submitted)
         }
 
         Keys.onPressed: function(event) {

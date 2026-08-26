@@ -1,5 +1,5 @@
 diff --git 1/usr/share/omarchy/shell/plugins/lock/Service.qml 2/Service.qml
-index 9ecb1cc..f872c3b 100644
+index 9ecb1cc..af75428 100644
 --- 1/usr/share/omarchy/shell/plugins/lock/Service.qml
 +++ 2/Service.qml
 @@ -133,7 +133,6 @@ Item {
@@ -10,7 +10,7 @@ index 9ecb1cc..f872c3b 100644
      logEvent("lock-requested")
      queueSessionLock()
  
-@@ -153,24 +152,13 @@ Item {
+@@ -153,29 +152,18 @@ Item {
      sessionLockStabilizeTimer.stop()
      pendingSessionLockTimer.stop()
      resetAuthenticationState()
@@ -35,6 +35,12 @@ index 9ecb1cc..f872c3b 100644
    }
  
    function submitPassword(value) {
+     var password = String(value || "")
+-    if (!lockRequested || authenticatingPassword || password.length === 0) return
++    if (!lockRequested || authenticatingPassword) return
+ 
+     runWake()
+     pendingPassword = password
 @@ -406,31 +394,6 @@ Item {
      command: ["bash", "-c", "omarchy-system-wake"]
    }
@@ -80,3 +86,31 @@ index 9ecb1cc..f872c3b 100644
    FileView {
      path: "/etc/pam.d/omarchy-lock-password"
      watchChanges: true
+diff --git 1/usr/share/omarchy/shell/plugins/lock/LockView.qml 2/LockView.qml
+index 7b0b0ae..01855f5 100644
+--- 1/usr/share/omarchy/shell/plugins/lock/LockView.qml
++++ 2/LockView.qml
+@@ -38,6 +38,14 @@ Item {
+     ? Border.surfaceSpec("lock", "border-error", Color.lock.borderError, root.outlineThickness, "border-alpha")
+     : Border.surfaceSpec("lock", "border-active", Color.lock.borderActive, root.outlineThickness, "border-alpha")
+ 
++  focus: true
++  Keys.onPressed: function(event) {
++    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
++      passwordInput.accepted()
++      event.accepted = true
++    }
++  }
++
+   signal submitPassword(string password)
+   signal passwordTextEdited(string password)
+   signal clearFailureRequested()
+@@ -171,7 +179,7 @@ Item {
+         onAccepted: {
+           var submitted = root.passwordText
+           root.passwordTextEdited("")
+-          if (submitted.length > 0) root.submitPassword(submitted)
++          root.submitPassword(submitted)
+         }
+ 
+         Keys.onPressed: function(event) {

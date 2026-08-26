@@ -14,6 +14,7 @@ omarchy restart shell
 ## Fixed issues:
 - Fixes issue where screen will turn off when I wake my computer from sleep, requiring many clicks on each monitor to wake them up. => Solution: Remove screen blanking after 5 seconds
 - Fixes issue where I am unable to type the password to unlock => Solution: Remove keyboard rgb blanking after 5 seconds
+- Fixes issue where pressing Enter does nothing when the password box is empty or unfocused => Solution: Enter always submits, from anywhere on the lock screen
 
 This plugin solves:
 - https://github.com/basecamp/omarchy/issues/7749
@@ -30,10 +31,10 @@ A combination of these 2 PRs (with some polish):
 - https://github.com/basecamp/omarchy/pull/7643
 
 ## Compare changes:
-No changes to LockView.qml, manifest.json is for metadata.
+manifest.json is for metadata.
 
 Diff:
-`diff /usr/share/omarchy/shell/plugins/lock Service.qml` => [dsns.diff](https://github.com/dsnsgithub/omarchy-lock-fix/blob/main/dsns.diff)
+`diff /usr/share/omarchy/shell/plugins/lock .` => [dsns.diff](https://github.com/dsnsgithub/omarchy-lock-fix/blob/main/dsns.diff)
 
 ## Creating your own plugin
 

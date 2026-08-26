@@ -163,7 +163,7 @@ Item {
 
   function submitPassword(value) {
     var password = String(value || "")
-    if (!lockRequested || authenticatingPassword || password.length === 0) return
+    if (!lockRequested || authenticatingPassword) return
 
     runWake()
     pendingPassword = password
