@@ -32,8 +32,6 @@ A combination of these 2 PRs (with some polish):
 ## Compare changes:
 No changes to LockView.qml, manifest.json is for metadata.
 
-The changes are intentionally verbose so that any issues caused by this removed blanking can be traced back to the plugin, sorry about that 😅.
-
 Diff:
 `diff /usr/share/omarchy/shell/plugins/lock Service.qml` => [dsns.diff](https://github.com/dsnsgithub/omarchy-lock-fix/blob/main/dsns.diff)
 
