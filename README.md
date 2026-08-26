@@ -37,8 +37,6 @@ A combination of these 2 PRs (with some polish):
 ## Compare changes:
 manifest.json is for metadata; omarchy-lock-howdy is the PAM stack for face unlock.
 
-The blanking changes are intentionally verbose so that any issues caused by that removed blanking can be traced back to the plugin, sorry about that 😅.
-
 Diff:
 `diff /usr/share/omarchy/shell/plugins/lock .` => [dsns.diff](https://github.com/dsnsgithub/omarchy-lock-fix/blob/main/dsns.diff)
 

@@ -1,5 +1,5 @@
 diff --git 1/usr/share/omarchy/shell/plugins/lock/Service.qml 2/Service.qml
-index 9ecb1cc..5faf244 100644
+index 9ecb1cc..8d02099 100644
 --- 1/usr/share/omarchy/shell/plugins/lock/Service.qml
 +++ 2/Service.qml
 @@ -22,6 +22,7 @@ Item {
@@ -38,29 +38,40 @@ index 9ecb1cc..5faf244 100644
    }
  
    function beginLock() {
-@@ -133,7 +148,8 @@ Item {
+@@ -133,7 +148,6 @@ Item {
  
      resetAuthenticationState()
      lockRequested = true
 -    armBlankTimer()
-+    // created by DSNS
-+    // armBlankTimer()
      logEvent("lock-requested")
      queueSessionLock()
  
-@@ -160,8 +176,9 @@ Item {
+@@ -153,24 +167,13 @@ Item {
+     sessionLockStabilizeTimer.stop()
+     pendingSessionLockTimer.stop()
+     resetAuthenticationState()
+-    idleBlankTimer.stop()
+     sessionLock.locked = false
+     logEvent("unlocked")
+     runWake()
    }
  
-   function armBlankTimer() {
+-  function armBlankTimer() {
 -    idleBlankTimer.armedAt = Date.now()
 -    idleBlankTimer.restart()
-+    // created by DSNS
-+    // idleBlankTimer.armedAt = Date.now()
-+    // idleBlankTimer.restart()
+-  }
+-
+   function runWake() {
+     if (!wakeProcess.running) wakeProcess.running = true
+-    if (lockRequested) armBlankTimer()
+-  }
+-
+-  function runBlank() {
+-    if (!blankProcess.running) blankProcess.running = true
    }
  
-   function runWake() {
-@@ -271,6 +288,7 @@ Item {
+   function submitPassword(value) {
+@@ -271,6 +274,7 @@ Item {
          backgroundPath: root.backgroundPath
          backgroundVersion: root.backgroundVersion
          fingerprintConfigured: root.fingerprintConfigured
@@ -68,7 +79,7 @@ index 9ecb1cc..5faf244 100644
          authenticatingPassword: root.authenticatingPassword
          failureMessage: root.failureMessage
          failedAttempts: root.failedAttempts
-@@ -281,6 +299,7 @@ Item {
+@@ -281,6 +285,7 @@ Item {
          onSubmitPassword: function(password) { root.submitPassword(password) }
          onClearFailureRequested: root.failureMessage = ""
          onWakeRequested: root.runWake()
@@ -76,7 +87,7 @@ index 9ecb1cc..5faf244 100644
        }
  
      }
-@@ -353,6 +372,20 @@ Item {
+@@ -353,6 +358,20 @@ Item {
      }
    }
  
@@ -97,45 +108,51 @@ index 9ecb1cc..5faf244 100644
    Timer {
      id: fingerprintRetryTimer
      interval: 250
-@@ -408,7 +441,7 @@ Item {
+@@ -406,31 +425,6 @@ Item {
+     command: ["bash", "-c", "omarchy-system-wake"]
+   }
  
-   Process {
-     id: blankProcess
+-  Process {
+-    id: blankProcess
 -    command: ["bash", "-c", "omarchy-brightness-keyboard off; omarchy-brightness-display off"]
-+    command: ["bash", "-c", "echo Attempted to Blank Screen - made by DSNS!!!"]
-   }
- 
-   Timer {
-@@ -421,7 +454,7 @@ Item {
-       // blank the freshly woken unlock screen under the user. Wall-clock time
-       // exposes the gap: take a fresh run-up instead of blanking.
-       if (Date.now() - armedAt > interval + 2000) {
+-  }
+-
+-  Timer {
+-    id: idleBlankTimer
+-    interval: 5000
+-    repeat: false
+-    property double armedAt: 0
+-    onTriggered: {
+-      // A countdown frozen by suspend fires right after resume, which would
+-      // blank the freshly woken unlock screen under the user. Wall-clock time
+-      // exposes the gap: take a fresh run-up instead of blanking.
+-      if (Date.now() - armedAt > interval + 2000) {
 -        root.armBlankTimer()
-+        // comment by DSNS: root.armBlankTimer()
-         return
-       }
-       // Only a password check in flight should hold the display up. The
-@@ -476,9 +509,11 @@ Item {
+-        return
+-      }
+-      // Only a password check in flight should hold the display up. The
+-      // fingerprint PAM stays armed for the whole lock, so gating on
+-      // `authenticating` here would keep the panel lit until unlock.
+-      if (root.lockRequested && !root.authenticatingPassword) root.runBlank()
+-    }
+-  }
+-
+   Timer {
+     id: sessionLockStabilizeTimer
+     interval: 500
+@@ -475,12 +469,6 @@ Item {
+     }
    }
  
-   onAuthenticatingPasswordChanged: {
-+    // created by dsns:
-+    return
-     if (!lockRequested) return
-     if (authenticatingPassword) idleBlankTimer.stop()
+-  onAuthenticatingPasswordChanged: {
+-    if (!lockRequested) return
+-    if (authenticatingPassword) idleBlankTimer.stop()
 -    else armBlankTimer()
-+    // else armBlankTimer()
-   }
- 
+-  }
+-
    FileView {
-@@ -502,6 +537,7 @@ Item {
-   }
- 
-   Component.onCompleted: {
-+    logEvent("dsns-clone-live", "marker-v1")
-     refreshBackground()
-     refreshFingerprintStatus()
-     checkStrandedLock()
+     path: "/etc/pam.d/omarchy-lock-password"
+     watchChanges: true
 diff --git 1/usr/share/omarchy/shell/plugins/lock/LockView.qml 2/LockView.qml
 index 7b0b0ae..0513e36 100644
 --- 1/usr/share/omarchy/shell/plugins/lock/LockView.qml
