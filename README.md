@@ -11,6 +11,11 @@ omarchy plugin add https://github.com/dsnsgithub/omarchy-lock-fix
 omarchy restart shell
 ```
 
+## Face unlock (Howdy)
+If [Howdy](https://github.com/boltgolt/howdy) is installed and enrolled, press **space** on the lock screen (with the password field empty) to start a face scan — the placeholder changes to `Scanning Face…` while it runs. Nothing scans on its own, so the camera only turns on when you ask for it. Type a password as usual to ignore it entirely; a space typed after you've started a password is still just a space.
+
+The plugin ships its own `omarchy-lock-howdy` PAM stack, so nothing is installed into `/etc/pam.d`.
+
 ## Fixed issues:
 - Fixes issue where screen will turn off when I wake my computer from sleep, requiring many clicks on each monitor to wake them up. => Solution: Remove screen blanking after 5 seconds
 - Fixes issue where I am unable to type the password to unlock => Solution: Remove keyboard rgb blanking after 5 seconds
@@ -30,12 +35,12 @@ A combination of these 2 PRs (with some polish):
 - https://github.com/basecamp/omarchy/pull/7643
 
 ## Compare changes:
-No changes to LockView.qml, manifest.json is for metadata.
+manifest.json is for metadata; omarchy-lock-howdy is the PAM stack for face unlock.
 
-The changes are intentionally verbose so that any issues caused by this removed blanking can be traced back to the plugin, sorry about that 😅.
+The blanking changes are intentionally verbose so that any issues caused by that removed blanking can be traced back to the plugin, sorry about that 😅.
 
 Diff:
-`diff /usr/share/omarchy/shell/plugins/lock Service.qml` => [dsns.diff](https://github.com/dsnsgithub/omarchy-lock-fix/blob/main/dsns.diff)
+`diff /usr/share/omarchy/shell/plugins/lock .` => [dsns.diff](https://github.com/dsnsgithub/omarchy-lock-fix/blob/main/dsns.diff)
 
 ## Creating your own plugin
 

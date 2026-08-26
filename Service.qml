@@ -22,6 +22,7 @@ Item {
   property bool fingerprintAuthenticating: false
   property bool passwordPamConfigured: false
   property bool fingerprintConfigured: false
+  property bool howdyAuthenticating: false
   property bool previewVisible: false
   property string enteredPassword: ""
   property string pendingPassword: ""
@@ -36,6 +37,10 @@ Item {
 
   readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
   readonly property bool authenticating: authenticatingPassword || fingerprintAuthenticating
+
+  // The plugin ships its own omarchy-lock-howdy PAM stack, so face unlock works
+  // without installing anything into /etc/pam.d.
+  readonly property string pluginDirectory: decodeURIComponent(String(Qt.resolvedUrl(".")).replace("file://", "")).replace(/\/+$/, "")
 
   function realScreenCount() {
     var screens = Quickshell.screens || []
@@ -123,6 +128,16 @@ Item {
     fingerprintRetryTimer.stop()
     if (passwordPam.active) passwordPam.abort()
     if (fingerprintPam.active) fingerprintPam.abort()
+    if (howdyPam.active) howdyPam.abort()
+  }
+
+  // Face unlock is opt-in per press: the spacebar on the lock screen is the
+  // only thing that starts a scan, so the camera stays off otherwise.
+  function startHowdy() {
+    if (!lockRequested || howdyAuthenticating || howdyPam.active) return
+
+    howdyAuthenticating = true
+    if (!howdyPam.start()) howdyAuthenticating = false
   }
 
   function beginLock() {
@@ -273,6 +288,7 @@ Item {
         backgroundPath: root.backgroundPath
         backgroundVersion: root.backgroundVersion
         fingerprintConfigured: root.fingerprintConfigured
+        howdyScanning: root.howdyAuthenticating
         authenticatingPassword: root.authenticatingPassword
         failureMessage: root.failureMessage
         failedAttempts: root.failedAttempts
@@ -283,6 +299,7 @@ Item {
         onSubmitPassword: function(password) { root.submitPassword(password) }
         onClearFailureRequested: root.failureMessage = ""
         onWakeRequested: root.runWake()
+        onHowdyRequested: root.startHowdy()
       }
 
     }
@@ -353,6 +370,20 @@ Item {
       root.fingerprintAuthenticating = false
       if (root.lockRequested && root.fingerprintConfigured) fingerprintRetryTimer.restart()
     }
+  }
+
+  PamContext {
+    id: howdyPam
+    config: "omarchy-lock-howdy"
+    configDirectory: root.pluginDirectory
+    user: root.userName
+
+    onCompleted: function(result) {
+      root.howdyAuthenticating = false
+      if (root.lockRequested && result === PamResult.Success) root.finishUnlock()
+    }
+
+    onError: root.howdyAuthenticating = false
   }
 
   Timer {

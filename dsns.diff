@@ -1,8 +1,44 @@
 diff --git 1/usr/share/omarchy/shell/plugins/lock/Service.qml 2/Service.qml
-index 9ecb1cc..d4f86eb 100644
+index 9ecb1cc..5faf244 100644
 --- 1/usr/share/omarchy/shell/plugins/lock/Service.qml
 +++ 2/Service.qml
-@@ -133,7 +133,8 @@ Item {
+@@ -22,6 +22,7 @@ Item {
+   property bool fingerprintAuthenticating: false
+   property bool passwordPamConfigured: false
+   property bool fingerprintConfigured: false
++  property bool howdyAuthenticating: false
+   property bool previewVisible: false
+   property string enteredPassword: ""
+   property string pendingPassword: ""
+@@ -37,6 +38,10 @@ Item {
+   readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
+   readonly property bool authenticating: authenticatingPassword || fingerprintAuthenticating
+ 
++  // The plugin ships its own omarchy-lock-howdy PAM stack, so face unlock works
++  // without installing anything into /etc/pam.d.
++  readonly property string pluginDirectory: decodeURIComponent(String(Qt.resolvedUrl(".")).replace("file://", "")).replace(/\/+$/, "")
++
+   function realScreenCount() {
+     var screens = Quickshell.screens || []
+     var count = 0
+@@ -123,6 +128,16 @@ Item {
+     fingerprintRetryTimer.stop()
+     if (passwordPam.active) passwordPam.abort()
+     if (fingerprintPam.active) fingerprintPam.abort()
++    if (howdyPam.active) howdyPam.abort()
++  }
++
++  // Face unlock is opt-in per press: the spacebar on the lock screen is the
++  // only thing that starts a scan, so the camera stays off otherwise.
++  function startHowdy() {
++    if (!lockRequested || howdyAuthenticating || howdyPam.active) return
++
++    howdyAuthenticating = true
++    if (!howdyPam.start()) howdyAuthenticating = false
+   }
+ 
+   function beginLock() {
+@@ -133,7 +148,8 @@ Item {
  
      resetAuthenticationState()
      lockRequested = true
@@ -12,7 +48,7 @@ index 9ecb1cc..d4f86eb 100644
      logEvent("lock-requested")
      queueSessionLock()
  
-@@ -160,8 +161,9 @@ Item {
+@@ -160,8 +176,9 @@ Item {
    }
  
    function armBlankTimer() {
@@ -24,7 +60,44 @@ index 9ecb1cc..d4f86eb 100644
    }
  
    function runWake() {
-@@ -408,7 +410,7 @@ Item {
+@@ -271,6 +288,7 @@ Item {
+         backgroundPath: root.backgroundPath
+         backgroundVersion: root.backgroundVersion
+         fingerprintConfigured: root.fingerprintConfigured
++        howdyScanning: root.howdyAuthenticating
+         authenticatingPassword: root.authenticatingPassword
+         failureMessage: root.failureMessage
+         failedAttempts: root.failedAttempts
+@@ -281,6 +299,7 @@ Item {
+         onSubmitPassword: function(password) { root.submitPassword(password) }
+         onClearFailureRequested: root.failureMessage = ""
+         onWakeRequested: root.runWake()
++        onHowdyRequested: root.startHowdy()
+       }
+ 
+     }
+@@ -353,6 +372,20 @@ Item {
+     }
+   }
+ 
++  PamContext {
++    id: howdyPam
++    config: "omarchy-lock-howdy"
++    configDirectory: root.pluginDirectory
++    user: root.userName
++
++    onCompleted: function(result) {
++      root.howdyAuthenticating = false
++      if (root.lockRequested && result === PamResult.Success) root.finishUnlock()
++    }
++
++    onError: root.howdyAuthenticating = false
++  }
++
+   Timer {
+     id: fingerprintRetryTimer
+     interval: 250
+@@ -408,7 +441,7 @@ Item {
  
    Process {
      id: blankProcess
@@ -33,7 +106,7 @@ index 9ecb1cc..d4f86eb 100644
    }
  
    Timer {
-@@ -421,7 +423,7 @@ Item {
+@@ -421,7 +454,7 @@ Item {
        // blank the freshly woken unlock screen under the user. Wall-clock time
        // exposes the gap: take a fresh run-up instead of blanking.
        if (Date.now() - armedAt > interval + 2000) {
@@ -42,7 +115,7 @@ index 9ecb1cc..d4f86eb 100644
          return
        }
        // Only a password check in flight should hold the display up. The
-@@ -476,9 +478,11 @@ Item {
+@@ -476,9 +509,11 @@ Item {
    }
  
    onAuthenticatingPasswordChanged: {
@@ -55,7 +128,7 @@ index 9ecb1cc..d4f86eb 100644
    }
  
    FileView {
-@@ -502,6 +506,7 @@ Item {
+@@ -502,6 +537,7 @@ Item {
    }
  
    Component.onCompleted: {
@@ -63,3 +136,45 @@ index 9ecb1cc..d4f86eb 100644
      refreshBackground()
      refreshFingerprintStatus()
      checkStrandedLock()
+diff --git 1/usr/share/omarchy/shell/plugins/lock/LockView.qml 2/LockView.qml
+index 7b0b0ae..0513e36 100644
+--- 1/usr/share/omarchy/shell/plugins/lock/LockView.qml
++++ 2/LockView.qml
+@@ -9,6 +9,7 @@ Item {
+   property string backgroundPath: ""
+   property int backgroundVersion: 0
+   property bool fingerprintConfigured: false
++  property bool howdyScanning: false
+   property bool authenticatingPassword: false
+   property string failureMessage: ""
+   property int failedAttempts: 0
+@@ -17,7 +18,7 @@ Item {
+   property string passwordText: ""
+   property bool syncingPasswordText: false
+ 
+-  readonly property string placeholderText: "Enter Password"
++  readonly property string placeholderText: howdyScanning ? "Scanning Face…" : "Enter Password"
+   readonly property int fieldWidth: 381
+   readonly property int fieldHeight: 67
+   readonly property int outlineThickness: 3
+@@ -42,6 +43,7 @@ Item {
+   signal passwordTextEdited(string password)
+   signal clearFailureRequested()
+   signal wakeRequested()
++  signal howdyRequested()
+ 
+   // Cache-busts the lock background by appending `?v=`. Adding a query
+   // string keeps Image's loader happy while forcing it to reload when the
+@@ -176,6 +178,12 @@ Item {
+ 
+         Keys.onPressed: function(event) {
+           root.wakeRequested()
++          // Space on an empty field starts a Howdy scan instead of typing a
++          // space; with a password already started it stays an ordinary space.
++          if (event.key === Qt.Key_Space && text.length === 0) {
++            root.howdyRequested()
++            event.accepted = true
++          }
+           if (event.key === Qt.Key_Escape || (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_U)) {
+             root.passwordTextEdited("")
+             event.accepted = true
