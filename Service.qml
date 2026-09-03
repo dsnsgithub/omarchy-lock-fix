@@ -22,6 +22,19 @@ Item {
   property bool fingerprintAuthenticating: false
   property bool passwordPamConfigured: false
   property bool fingerprintConfigured: false
+
+  // Gaze (GunduLabs/gaze) face unlock. gazeState is the one-line verdict from
+  // gazeCheckProc: missing (no gaze binary), daemon-stopped (gazed down),
+  // no-face (installed but nothing enrolled), ready, or unknown (not checked yet).
+  property string gazeState: "unknown"
+  property bool gazeAuthenticating: false
+  property int gazeAttempts: 0
+  property double gazeBurstEndedAt: 0
+  property bool gazeSetupRequested: false
+  property bool gazeSetupIgnored: false
+  property bool gazeSetupRunning: false
+  property bool gazeEnabled: true
+  property string gazeToggleRequest: "disable"
   property bool previewVisible: false
   property string enteredPassword: ""
   property string pendingPassword: ""
@@ -36,6 +49,33 @@ Item {
 
   readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
   readonly property bool authenticating: authenticatingPassword || fingerprintAuthenticating
+
+  readonly property bool gazeConfigured: gazeEnabled && gazeState === "ready"
+
+  // A burst of quick scans when the lock screen appears, then it goes quiet so
+  // typing is never fought over; any wake interaction rearms it (Windows Hello).
+  readonly property int gazeMaxAttempts: 3
+  readonly property int gazeRearmDelay: 5000
+
+  // The plugin ships its own PAM service next to Service.qml, so nothing in
+  // /etc/pam.d is needed or edited -- mirroring how Quickshell resolves configDirectory.
+  readonly property string pluginDirectory: {
+    var path = String(Qt.resolvedUrl("."))
+    if (path.indexOf("file://") === 0) path = path.substring(7)
+    return decodeURIComponent(path).replace(/\/+$/, "")
+  }
+
+  // Cards the setup guide on first run; persisted vs session-dismissed lives in
+  // ~/.local/state/omarchy/dsns.lock-gaze-*. Files written by the IPC toggles below.
+  readonly property string gazeDisabledFile: stateHome + "/omarchy/dsns.lock-gaze-disabled"
+  readonly property string gazeDismissedFile: stateHome + "/omarchy/dsns.lock-gaze-dismissed"
+
+  // Auto-appears whenever gaze is not ready and wasn't told to shut up. Never
+  // over the lock; the user (or IPC with gazeSetup) can always bring it back.
+  readonly property bool gazeSetupCardVisible:
+    !root.locked &&
+    (gazeSetupRequested ||
+       (gazeEnabled && gazeState !== "unknown" && gazeState !== "ready" && !gazeSetupIgnored))
 
   function realScreenCount() {
     var screens = Quickshell.screens || []
@@ -107,6 +147,37 @@ Item {
     if (!fingerprintCheckProc.running) fingerprintCheckProc.running = true
   }
 
+  function refreshGazeStatus() {
+    if (!gazeCheckProc.running) gazeCheckProc.running = true
+  }
+
+  function showGazeSetupCard() {
+    gazeSetupRequested = true
+  }
+
+  function hideGazeSetupCard() {
+    gazeSetupRequested = false
+  }
+
+  function dismissGazeSetupCard() {
+    hideGazeSetupCard()
+    gazeSetupIgnored = true
+    if (!gazeDismissProc.running) gazeDismissProc.running = true
+  }
+
+  function launchGazeSetup() {
+    showGazeSetupCard()
+    if (!gazeSetupRunner.running) {
+      gazeSetupRunning = true
+      gazeSetupRunner.running = true
+    }
+  }
+
+  function toggleGaze(enable) {
+    gazeToggleRequest = enable ? "enable" : "disable"
+    if (!gazeToggleProc.running) gazeToggleProc.running = true
+  }
+
   function logEvent(event) {
     lastEvent = event
     lastEventAt = new Date().toISOString()
@@ -123,6 +194,9 @@ Item {
     fingerprintRetryTimer.stop()
     if (passwordPam.active) passwordPam.abort()
     if (fingerprintPam.active) fingerprintPam.abort()
+    stopGaze()
+    gazeAttempts = 0
+    gazeBurstEndedAt = 0
   }
 
   function beginLock() {
@@ -139,6 +213,7 @@ Item {
     Qt.callLater(function() {
       root.refreshBackground()
       root.refreshFingerprintStatus()
+      root.refreshGazeStatus()
     })
 
     return true
@@ -159,6 +234,9 @@ Item {
 
   function runWake() {
     if (!wakeProcess.running) wakeProcess.running = true
+    // Keystrokes and mouse moves on the lock surface wake it up; a burst that
+    // spent its scans waiting for the user to show up gets another chance.
+    if (lockRequested) rearmGaze()
   }
 
   function submitPassword(value) {
@@ -166,6 +244,7 @@ Item {
     if (!lockRequested || authenticatingPassword || password.length === 0) return
 
     runWake()
+    stopGaze()
     pendingPassword = password
     failureMessage = ""
     authenticatingPassword = true
@@ -191,7 +270,12 @@ Item {
     pendingPassword = ""
     failedAttempts += 1
     failureMessage = "Authentication failed (" + failedAttempts + ")"
+    gazeAttempts = 0
+    gazeBurstEndedAt = 0
     runWake()
+    // The camera is pointed at the user who just failed their password;
+    // a failed password is a perfect moment for another face scan.
+    startGaze()
   }
 
   function startFingerprint() {
@@ -202,6 +286,64 @@ Item {
     if (!fingerprintPam.start()) {
       fingerprintAuthenticating = false
     }
+  }
+
+  function startGaze() {
+    if (!gazeConfigured) return
+    if (!lockRequested || !sessionLock.secure) return
+    if (gazePam.active || gazeAuthenticating) return
+    if (authenticatingPassword) return
+    if (gazeAttempts >= gazeMaxAttempts) return
+
+    gazeAttempts += 1
+    gazeAuthenticating = true
+    logEvent("gaze-scan: attempt " + gazeAttempts + "/" + gazeMaxAttempts)
+
+    if (!gazePam.start()) {
+      gazeAuthenticating = false
+      endGazeBurst("start-failed")
+    }
+  }
+
+  function stopGaze() {
+    gazeRetryTimer.stop()
+    gazeAuthenticating = false
+    if (gazePam.active) gazePam.abort()
+  }
+
+  function endGazeBurst(reason) {
+    gazeRetryTimer.stop()
+    gazeAttempts = gazeMaxAttempts
+    gazeBurstEndedAt = Date.now()
+    logEvent("gaze-idle: " + reason)
+  }
+
+  function rearmGaze() {
+    if (!gazeConfigured || !lockRequested) return
+    if (gazePam.active || gazeAuthenticating) return
+    if (gazeAttempts < gazeMaxAttempts) return
+    if (Date.now() - gazeBurstEndedAt < gazeRearmDelay) return
+
+    gazeAttempts = 0
+    startGaze()
+  }
+
+  function handleGazeFinished(result) {
+    gazeAuthenticating = false
+
+    if (!lockRequested) return
+    if (result === PamResult.Success) {
+      logEvent("gaze-success")
+      finishUnlock()
+      return
+    }
+
+    if (gazeAttempts >= gazeMaxAttempts) {
+      endGazeBurst("no match")
+      return
+    }
+
+    gazeRetryTimer.restart()
   }
 
   function handleFingerprintFinished(result) {
@@ -227,6 +369,7 @@ Item {
         sessionLockStabilizeTimer.stop()
         pendingSessionLockTimer.stop()
         root.startFingerprint()
+        root.startGaze()
       }
     }
 
@@ -259,6 +402,8 @@ Item {
         backgroundPath: root.backgroundPath
         backgroundVersion: root.backgroundVersion
         fingerprintConfigured: root.fingerprintConfigured
+        gazeConfigured: root.gazeConfigured
+        gazeScanning: root.gazeAuthenticating
         authenticatingPassword: root.authenticatingPassword
         failureMessage: root.failureMessage
         failedAttempts: root.failedAttempts
@@ -289,6 +434,8 @@ Item {
       backgroundPath: root.backgroundPath
       backgroundVersion: root.backgroundVersion
       fingerprintConfigured: root.fingerprintConfigured
+      gazeConfigured: root.gazeConfigured
+      gazeScanning: false
       authenticatingPassword: false
       failureMessage: ""
       failedAttempts: 0
@@ -346,6 +493,138 @@ Item {
     interval: 250
     repeat: false
     onTriggered: root.startFingerprint()
+  }
+
+  // Face unlock runs against the plugin's own PAM service (omarchy-lock-gaze,
+  // found in pluginDirectory), which stacks pam_gaze.so alone: face pass or
+  // nothing, password fallback stays under the passwordPam context here.
+  PamContext {
+    id: gazePam
+    config: "omarchy-lock-gaze"
+    configDirectory: root.pluginDirectory
+    user: root.userName
+
+    onResponseRequiredChanged: {
+      if (!responseRequired) return
+      // pam_gaze never converses; a prompt means the service file changed
+      // under us. Abort rather than feed it typed secrets.
+      root.logEvent("gaze-abort: unexpected prompt")
+      root.stopGaze()
+      root.endGazeBurst("unexpected prompt")
+    }
+
+    onCompleted: function(result) {
+      root.handleGazeFinished(result)
+    }
+
+    onError: function(error) {
+      root.gazeAuthenticating = false
+      root.endGazeBurst("pam error " + error)
+    }
+  }
+
+  Timer {
+    id: gazeRetryTimer
+    interval: 400
+    repeat: false
+    onTriggered: root.startGaze()
+  }
+
+  // One bash probe answers everything about the local gaze install. Requires
+  // the daemon up, so a stopped gazed reports as daemon-stopped, not no-face.
+  Process {
+    id: gazeCheckProc
+    command: ["bash", "-c", "if ! command -v gaze >/dev/null 2>&1; then echo missing; elif ! systemctl is-active --quiet gazed.service 2>/dev/null; then echo daemon-stopped; else faces=$(gaze list-faces 2>/dev/null || true); if [[ -z $faces || $faces == *'No faces found'* ]]; then echo no-face; else echo ready; fi; fi"]
+    stdout: StdioCollector { id: gazeCheckStdout; waitForEnd: true }
+    onExited: {
+      var answer = String(gazeCheckStdout.text || "").trim()
+      root.gazeState = answer.length > 0 ? answer : "unknown"
+      root.logEvent("gaze-state: " + root.gazeState)
+
+      if (root.gazeConfigured) {
+        if (root.lockRequested && sessionLock.secure) root.startGaze()
+        else if (gazePam.active) gazePam.abort()
+      } else if (gazePam.active) {
+        gazePam.abort()
+      }
+    }
+  }
+
+  // Runs the plugin's installer/enroller in a user-visible terminal: AUR build
+  // and sudo for the daemon both want one.
+  Process {
+    id: gazeSetupRunner
+    command: {
+      var bin = root.pluginDirectory + "/gaze-setup.sh"
+      var launcher =
+        "if command -v omarchy-launch-tui >/dev/null 2>&1; then" +
+        " exec omarchy-launch-tui bash \"$1\"" +
+        " elif command -v xdg-terminal-exec >/dev/null 2>&1; then" +
+        " exec xdg-terminal-exec -e bash \"$1\"" +
+        " elif command -v kitty >/dev/null 2>&1; then" +
+        " exec kitty bash \"$1\"" +
+        " elif command -v alacritty >/dev/null 2>&1; then" +
+        " exec alacritty -e bash \"$1\"" +
+        " elif command -v foot >/dev/null 2>&1; then" +
+        " exec foot bash \"$1\"" +
+        " else exec bash \"$1\"; fi"
+      return ["bash", "-c", launcher, "gaze-setup", bin]
+    }
+    onExited: {
+      root.gazeSetupRunning = false
+      // Enrollment lands before exit, but give the daemon a beat, then let
+      // gazeRescanTimer keep the card honest while it stays open.
+      Qt.callLater(root.refreshGazeStatus)
+    }
+  }
+
+  Process {
+    id: gazeDismissProc
+    command: ["bash", "-c", 'd="$HOME/.local/state/omarchy"; mkdir -p "$d"; touch "$d/dsns.lock-gaze-dismissed"']
+    onExited: root.gazeSetupIgnored = true
+  }
+
+  Process {
+    id: gazeToggleProc
+    command: ["bash", "-c", 'd="$HOME/.local/state/omarchy"; mkdir -p "$d"; if [[ $1 == enable ]]; then rm -f "$d/dsns.lock-gaze-disabled"; else touch "$d/dsns.lock-gaze-disabled"; fi; rm -f "$d/dsns.lock-gaze-dismissed"', "gaze-toggle", root.gazeToggleRequest]
+    onExited: {
+      if (root.gazeToggleRequest === "disable") {
+        root.gazeEnabled = false
+        root.hideGazeSetupCard()
+        // A mid-scan disable must not let the result still unlock the session.
+        stopGaze()
+        gazeAttempts = 0
+      } else {
+        root.gazeEnabled = true
+        root.refreshGazeStatus()
+      }
+    }
+  }
+
+  Timer {
+    id: gazeRescanTimer
+    interval: 4000
+    repeat: true
+    running: root.gazeSetupCardVisible
+    onTriggered: root.refreshGazeStatus()
+  }
+
+  FileView {
+    path: root.gazeDismissedFile
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.gazeSetupIgnored = true
+    onLoadFailed: root.gazeSetupIgnored = false
+    onFileChanged: reload()
+  }
+
+  FileView {
+    path: root.gazeDisabledFile
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.gazeEnabled = false
+    onLoadFailed: root.gazeEnabled = true
+    onFileChanged: reload()
   }
 
   Process {
@@ -461,6 +740,7 @@ Item {
   Component.onCompleted: {
     refreshBackground()
     refreshFingerprintStatus()
+    refreshGazeStatus()
     checkStrandedLock()
   }
 
@@ -487,6 +767,10 @@ Item {
         realScreens: root.realScreenCount(),
         passwordPam: root.passwordPamConfigured,
         fingerprint: root.fingerprintConfigured,
+        gaze: root.gazeConfigured,
+        gazeState: root.gazeState,
+        gazeScanning: root.gazeAuthenticating,
+        gazeAttempts: root.gazeAttempts,
         authenticating: root.authenticating,
         lastEvent: root.lastEvent,
         lastEventAt: root.lastEventAt
@@ -503,6 +787,72 @@ Item {
     function hidePreview(): string {
       root.previewVisible = false
       return "ok"
+    }
+
+    function gazeStatus(): string {
+      return JSON.stringify({
+        state: root.gazeState,
+        configured: root.gazeConfigured,
+        enabled: root.gazeEnabled,
+        scanning: root.gazeAuthenticating
+      })
+    }
+
+    function gazeSetup(): string {
+      root.showGazeSetupCard()
+      return "ok"
+    }
+
+    function gazeSetupRun(): string {
+      root.launchGazeSetup()
+      return "ok"
+    }
+
+    function gazeSetupHide(): string {
+      root.hideGazeSetupCard()
+      return "ok"
+    }
+
+    function gazeEnable(): string {
+      root.toggleGaze(true)
+      return "ok"
+    }
+
+    function gazeDisable(): string {
+      root.toggleGaze(false)
+      return "ok"
+    }
+  }
+
+  // First-run guide: appears (never over the lock) whenever gaze is missing,
+  // daemon down or face-less, until setup succeeds or it is dismissed.
+  PanelWindow {
+    id: gazeSetupWindow
+    visible: root.gazeSetupCardVisible
+    anchors { top: true; bottom: true; left: true; right: true }
+    color: "transparent"
+    WlrLayershell.namespace: "omarchy-gaze-setup"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    exclusionMode: ExclusionMode.Ignore
+
+    MouseArea {
+      anchors.fill: parent
+      // Clicks anywhere but the card count as "not now" (the card's buttons
+      // take their clicks first), so the guide never traps the pointer.
+      onClicked: root.hideGazeSetupCard()
+    }
+
+    GazeSetupCard {
+      anchors.bottom: parent.bottom
+      anchors.right: parent.right
+      anchors.margins: 44
+
+      gazeState: root.gazeState
+      setupRunning: root.gazeSetupRunning
+      onSetupRequested: root.launchGazeSetup()
+      onDismissRequested: root.hideGazeSetupCard()
+      onDismissForeverRequested: root.dismissGazeSetupCard()
     }
   }
 }

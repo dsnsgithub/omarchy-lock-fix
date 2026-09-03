@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "dsns.lock",
   "name": "Omarchy Lock Screen Fix",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "author": "Dominic Seung",
-  "description": "Quickshell session lock - Fixes Screen Blank.",
+  "description": "Quickshell session lock - Fixes screen blank, adds Gaze face unlock (Windows Hello style) with first-run setup.",
   "kinds": [
     "service"
   ],
