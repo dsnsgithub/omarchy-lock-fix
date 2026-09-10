@@ -9,6 +9,8 @@ Item {
   property string backgroundPath: ""
   property int backgroundVersion: 0
   property bool fingerprintConfigured: false
+  property bool gazeConfigured: false
+  property bool gazeScanning: false
   property bool authenticatingPassword: false
   property string failureMessage: ""
   property int failedAttempts: 0
@@ -17,7 +19,7 @@ Item {
   property string passwordText: ""
   property bool syncingPasswordText: false
 
-  readonly property string placeholderText: "Enter Password"
+  readonly property string placeholderText: gazeScanning ? "Scanning Face…" : "Enter Password"
   readonly property int fieldWidth: 381
   readonly property int fieldHeight: 67
   readonly property int outlineThickness: 3
@@ -27,6 +29,9 @@ Item {
   // Space to keep clear on each side of the field for the fingerprint icon
   // (icon width plus a gap) so the centered dots never run under it.
   readonly property real fingerprintReserve: fingerprintConfigured ? Math.round(fingerprintIcon.implicitWidth + 12) : 0
+  // The face icon sits on the field's left edge; reserving on both sides keeps
+  // the dots centered whether one or both unlock hints show.
+  readonly property real gazeReserve: gazeConfigured ? Math.round(faceIcon.implicitWidth + 12) : 0
   // Shrink the dots to fit once the password outgrows the field, so every
   // keystroke stays visible — otherwise long passwords clip with no feedback.
   readonly property real passwordDotScale: dotMetrics.advanceWidth > 0
@@ -135,9 +140,10 @@ Item {
         anchors.topMargin: inputField.borderTop
         // Reserve the fingerprint icon's width on both sides so the centered
         // dots stay symmetric and never slide under the icon as they grow.
-        anchors.rightMargin: inputField.borderRight + 18 + root.fingerprintReserve
+        // Same treatment for the face icon on the left.
+        anchors.rightMargin: inputField.borderRight + 18 + root.fingerprintReserve + root.gazeReserve
         anchors.bottomMargin: inputField.borderBottom
-        anchors.leftMargin: inputField.borderLeft + 18 + root.fingerprintReserve
+        anchors.leftMargin: inputField.borderLeft + 18 + root.fingerprintReserve + root.gazeReserve
         verticalAlignment: TextInput.AlignVCenter
         horizontalAlignment: TextInput.AlignHCenter
         activeFocusOnPress: true
@@ -208,6 +214,23 @@ Item {
         visible: root.fingerprintConfigured
         text: "󰈷"
         color: Color.lock.placeholder
+        font.family: Style.font.family
+        font.pixelSize: Math.round(root.fieldFontSize * 1.1)
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
+      }
+
+      // Face hint pinned inside the field's left edge when gaze is enrolled;
+      // brightens while the camera scan from pam_gaze is running.
+      Text {
+        id: faceIcon
+        objectName: "gazeIndicator"
+        anchors.left: parent.left
+        anchors.leftMargin: inputField.borderLeft + 18
+        anchors.verticalCenter: parent.verticalCenter
+        visible: root.gazeConfigured || root.gazeScanning
+        text: "󰟿"
+        color: root.gazeScanning ? Color.lock.text : Color.lock.placeholder
         font.family: Style.font.family
         font.pixelSize: Math.round(root.fieldFontSize * 1.1)
         horizontalAlignment: Text.AlignHCenter

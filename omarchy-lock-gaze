@@ -1,0 +1,15 @@
+#%PAM-1.0
+# Face unlock service shipped with the dsns.lock Omarchy plugin
+# (~/.config/omarchy/plugins/dsns.lock/). Quickshell's PamContext is pointed at
+# this directory, so nothing in /etc/pam.d needs root to serve it.
+#
+# pam_gaze.so is all we stack: either the face matches and the session unlocks,
+# or the plugin's password field takes over on its own omarchy-lock-password
+# stack. gaze returns PAM_IGNORE when the daemon is down or no face is
+# enrolled, which the plugin treats as "not configured, no scanning".
+#
+# If you would rather have gaze fall back *inside* PAM, mimic upstream's
+# hyprlock-gaze: `auth [success=done default=ignore] pam_gaze.so`
+# followed by `auth include system-auth`.
+auth        required        pam_gaze.so
+account     required        pam_permit.so
