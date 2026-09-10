@@ -19,6 +19,7 @@ This plugin solves:
 - https://github.com/basecamp/omarchy/issues/7749
 - https://github.com/basecamp/omarchy/issues/7399
 - https://github.com/basecamp/omarchy/issues/7507
+- https://github.com/omacom/omarchy/issues/10433
 
 ## Longer term solution
 My plugin works, but it serves as a temporary fix while they work out a better solution. Here are a couple suggestions:
