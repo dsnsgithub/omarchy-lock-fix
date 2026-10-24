@@ -171,16 +171,12 @@ Item {
         onAccepted: {
           var submitted = root.passwordText
           root.passwordTextEdited("")
-          if (submitted.length > 0) root.submitPassword(submitted)
+          root.submitPassword(submitted)
         }
 
         Keys.onPressed: function(event) {
           root.wakeRequested()
-          if (event.key === Qt.Key_Space && root.passwordText.length === 0 && event.modifiers === Qt.NoModifier) {
-            // Start PAM without inserting a space, for passwordless auth methods.
-            if (!event.isAutoRepeat) root.submitPassword("")
-            event.accepted = true
-          } else if (event.key === Qt.Key_Escape || (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_U)) {
+          if (event.key === Qt.Key_Escape || (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_U)) {
             root.passwordTextEdited("")
             event.accepted = true
           }

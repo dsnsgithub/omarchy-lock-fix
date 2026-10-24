@@ -11,7 +11,7 @@ omarchy plugin add https://github.com/dsnsgithub/omarchy-lock-fix
 omarchy restart shell
 ```
 
-Press Space with an empty password field to start authentication without typing a password. Your configured PAM authentication must still succeed to unlock. Spaces within a typed password work as usual.
+Press Enter with an empty password field to start authentication without typing a password. Your configured PAM authentication must still succeed to unlock.
 
 ## Fixed issues:
 - Fixes issue where screen will turn off when I wake my computer from sleep, requiring many clicks on each monitor to wake them up. => Solution: Remove screen blanking after 5 seconds
@@ -33,7 +33,7 @@ A combination of these 2 PRs (with some polish):
 - https://github.com/basecamp/omarchy/pull/7643
 
 ## Compare changes:
-LockView.qml adds the Space shortcut for authentication; manifest.json is for metadata.
+LockView.qml allows Enter to start authentication with an empty password field; manifest.json is for metadata.
 
 Diff:
 `diff /usr/share/omarchy/shell/plugins/lock Service.qml` => [dsns.diff](https://github.com/dsnsgithub/omarchy-lock-fix/blob/main/dsns.diff)
