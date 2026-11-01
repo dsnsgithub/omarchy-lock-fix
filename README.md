@@ -11,6 +11,12 @@ omarchy plugin add https://github.com/dsnsgithub/omarchy-lock-fix
 omarchy restart shell
 ```
 
+Update:
+```bash
+omarchy plugin update dsns.lock
+omarchy restart shell
+```
+
 Press Enter on the Lock Screen to start authentication without needing to type in a password, useful if you have Gaze face unlock.
 
 ## Fixed issues:
