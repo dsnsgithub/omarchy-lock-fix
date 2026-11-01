@@ -33,10 +33,9 @@ A combination of these 2 PRs (with some polish):
 - https://github.com/basecamp/omarchy/pull/7643
 
 ## Compare changes:
-LockView.qml allows Enter to start authentication with an empty password field; manifest.json is for metadata.
+The plugin keeps Omarchy's lock screen behavior with two customizations: it disables automatic screen and keyboard blanking, and allows Enter to start authentication with an empty password field. `manifest.json` contains plugin metadata.
 
-Diff:
-`diff /usr/share/omarchy/shell/plugins/lock Service.qml` => [dsns.diff](https://github.com/dsnsgithub/omarchy-lock-fix/blob/main/dsns.diff)
+[dsns.diff](https://github.com/dsnsgithub/omarchy-lock-fix/blob/main/dsns.diff) compares both `Service.qml` and `LockView.qml` against the installed Omarchy lock screen in `/usr/share/omarchy/shell/plugins/lock/`.
 
 ## Creating your own plugin
 
