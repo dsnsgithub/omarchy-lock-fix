@@ -11,7 +11,7 @@ omarchy plugin add https://github.com/dsnsgithub/omarchy-lock-fix
 omarchy restart shell
 ```
 
-Press Enter with an empty password field to start authentication without typing a password. Your configured PAM authentication must still succeed to unlock.
+Press Enter on the Lock Screen to start authentication without needing to type in a password, useful if you have Gaze face unlock.
 
 ## Fixed issues:
 - Fixes issue where screen will turn off when I wake my computer from sleep, requiring many clicks on each monitor to wake them up. => Solution: Remove screen blanking after 5 seconds

@@ -60,6 +60,14 @@ Item {
     passwordTextEdited("")
   }
 
+  function submitCurrentPassword() {
+    if (!inputEnabled || authenticatingPassword) return
+    var submitted = passwordText
+    wakeRequested()
+    passwordTextEdited("")
+    submitPassword(submitted)
+  }
+
   function syncPasswordText() {
     if (passwordInput.text === passwordText) return
     syncingPasswordText = true
@@ -74,6 +82,15 @@ Item {
   Component.onCompleted: {
     syncPasswordText()
     if (inputEnabled) Qt.callLater(forcePasswordFocus)
+  }
+
+  // Keep Enter available even when the password field has lost focus.
+  Shortcut {
+    sequences: ["Return", "Enter"]
+    context: Qt.WindowShortcut
+    enabled: root.inputEnabled && !root.authenticatingPassword
+    autoRepeat: false
+    onActivated: root.submitCurrentPassword()
   }
 
   // Measures the masked password at full size; passwordDotScale compares this
@@ -168,11 +185,7 @@ Item {
           if (text.length > 0 && root.failureMessage.length > 0) root.clearFailureRequested()
         }
 
-        onAccepted: {
-          var submitted = root.passwordText
-          root.passwordTextEdited("")
-          root.submitPassword(submitted)
-        }
+        onAccepted: root.submitCurrentPassword()
 
         Keys.onPressed: function(event) {
           root.wakeRequested()
