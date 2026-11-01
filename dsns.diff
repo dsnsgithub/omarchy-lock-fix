@@ -1,8 +1,8 @@
 diff --git 1/usr/share/omarchy/shell/plugins/lock/Service.qml 2/Service.qml
-index 9ecb1cc..f872c3b 100644
+index 76ea47a..a9f147d 100644
 --- 1/usr/share/omarchy/shell/plugins/lock/Service.qml
 +++ 2/Service.qml
-@@ -133,7 +133,6 @@ Item {
+@@ -144,7 +144,6 @@ Item {
  
      resetAuthenticationState()
      lockRequested = true
@@ -10,7 +10,7 @@ index 9ecb1cc..f872c3b 100644
      logEvent("lock-requested")
      queueSessionLock()
  
-@@ -153,24 +152,13 @@ Item {
+@@ -164,29 +163,18 @@ Item {
      sessionLockStabilizeTimer.stop()
      pendingSessionLockTimer.stop()
      resetAuthenticationState()
@@ -35,7 +35,13 @@ index 9ecb1cc..f872c3b 100644
    }
  
    function submitPassword(value) {
-@@ -406,31 +394,6 @@ Item {
+     var password = String(value || "")
+-    if (!lockRequested || authenticatingPassword || password.length === 0) return
++    if (!lockRequested || authenticatingPassword) return
+ 
+     runWake()
+     pendingPassword = password
+@@ -418,31 +406,6 @@ Item {
      command: ["bash", "-c", "omarchy-system-wake"]
    }
  
@@ -67,7 +73,7 @@ index 9ecb1cc..f872c3b 100644
    Timer {
      id: sessionLockStabilizeTimer
      interval: 500
-@@ -475,12 +438,6 @@ Item {
+@@ -487,12 +450,6 @@ Item {
      }
    }
  
@@ -80,3 +86,51 @@ index 9ecb1cc..f872c3b 100644
    FileView {
      path: "/etc/pam.d/omarchy-lock-password"
      watchChanges: true
+diff --git 1/usr/share/omarchy/shell/plugins/lock/LockView.qml 2/LockView.qml
+index 3c5f65d..081d0f5 100644
+--- 1/usr/share/omarchy/shell/plugins/lock/LockView.qml
++++ 2/LockView.qml
+@@ -61,6 +61,14 @@ Item {
+     passwordTextEdited("")
+   }
+ 
++  function submitCurrentPassword() {
++    if (!inputEnabled || authenticatingPassword) return
++    var submitted = passwordText
++    wakeRequested()
++    passwordTextEdited("")
++    submitPassword(submitted)
++  }
++
+   function syncPasswordText() {
+     if (passwordInput.text === passwordText) return
+     syncingPasswordText = true
+@@ -77,6 +85,15 @@ Item {
+     if (inputEnabled) Qt.callLater(forcePasswordFocus)
+   }
+ 
++  // Keep Enter available even when the password field has lost focus.
++  Shortcut {
++    sequences: ["Return", "Enter"]
++    context: Qt.WindowShortcut
++    enabled: root.inputEnabled && !root.authenticatingPassword
++    autoRepeat: false
++    onActivated: root.submitCurrentPassword()
++  }
++
+   // Measures the masked password at full size; passwordDotScale compares this
+   // against the field width to decide how far the dots must shrink to fit.
+   TextMetrics {
+@@ -169,11 +186,7 @@ Item {
+           if (text.length > 0 && root.failureMessage.length > 0) root.clearFailureRequested()
+         }
+ 
+-        onAccepted: {
+-          var submitted = root.passwordText
+-          root.passwordTextEdited("")
+-          if (submitted.length > 0) root.submitPassword(submitted)
+-        }
++        onAccepted: root.submitCurrentPassword()
+ 
+         Keys.onPressed: function(event) {
+           root.wakeRequested()
